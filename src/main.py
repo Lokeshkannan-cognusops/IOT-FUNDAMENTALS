@@ -4,7 +4,7 @@ ESP32 Multi-Sensor Station: DHT22 Telemetry + Motion-Triggered Relay/LED
 
 Outputs:
 1. Boot-time Power-On Self-Test (POST): Red LED & Relay blink 3 times on startup.
-2. DHT22 5-second periodic temperature & humidity JSON telemetry over Serial & MQTT (with heartbeat LED pulse).
+2. DHT22 5-second periodic temperature & humidity JSON telemetry over Serial & MQTT (with heartbeat pulse).
 3. PIR Motion Sensor trigger: Alert blink + Relay & Red LED latch ON with real-time Serial events.
 """
 
@@ -18,7 +18,8 @@ from umqtt.simple import MQTTClient
 # Pin Definitions
 DHT_PIN      = 15    # DHT22 Data pin
 PIR_PIN      = 13    # PIR Motion Sensor Output pin
-ACTUATOR_PIN = 12    # Relay module input & LED Anode pin (GPIO 12)
+ACTUATOR_PIN = 12    # Relay module input & Red LED Anode pin (GPIO 12)
+ONBOARD_LED  = 2     # Built-in ESP32 LED (GPIO 2) for guaranteed visual feedback
 
 # MQTT Parameters
 MQTT_CLIENT_ID    = "esp32-weather-motion-demo"
@@ -28,9 +29,15 @@ MQTT_TOPIC        = "wokwi-weather"
 MQTT_MOTION_TOPIC = "wokwi-motion"
 
 # Initialize Hardware Peripherals
-sensor   = dht.DHT22(Pin(DHT_PIN))
-pir      = Pin(PIR_PIN, Pin.IN)
-actuator = Pin(ACTUATOR_PIN, Pin.OUT)
+sensor      = dht.DHT22(Pin(DHT_PIN))
+pir         = Pin(PIR_PIN, Pin.IN)
+actuator    = Pin(ACTUATOR_PIN, Pin.OUT)
+onboard_led = Pin(ONBOARD_LED, Pin.OUT)
+
+def set_actuators(state):
+    """Controls external Relay & Red LED (GPIO 12) plus onboard LED (GPIO 2) simultaneously."""
+    actuator.value(state)
+    onboard_led.value(state)
 
 print("==================================================")
 print("  ESP32 Smart Environmental & Motion Station     ")
@@ -40,9 +47,9 @@ print("==================================================")
 # Power-On Self-Test (POST): Visibly blink Red LED & toggle Relay 3 times
 print("\n[INIT] Starting Actuator Test: Blinking Red LED & Relay 3 times...")
 for i in range(3):
-    actuator.value(1)
+    set_actuators(1)
     time.sleep_ms(300)
-    actuator.value(0)
+    set_actuators(0)
     time.sleep_ms(200)
 print("[INIT] Red LED & Relay self-test PASSED (Hardware OK)\n")
 
@@ -89,11 +96,11 @@ while True:
             # Alert blink sequence on motion trigger: 3 rapid pulses, then stay ON
             print("[EVENT] 🚨 Motion Detected! Triggering Relay & Red LED alert...")
             for _ in range(3):
-                actuator.value(1)
+                set_actuators(1)
                 time.sleep_ms(100)
-                actuator.value(0)
+                set_actuators(0)
                 time.sleep_ms(100)
-            actuator.value(1)  # Latch ON Relay & LED while motion is active
+            set_actuators(1)  # Latch ON Relay & LED while motion is active
             print("[EVENT] 💡 Relay & Red LED latched ON (Motion Active)")
             if client:
                 try:
@@ -101,7 +108,7 @@ while True:
                 except Exception:
                     pass
         else:
-            actuator.value(0)  # Turn OFF Relay & LED
+            set_actuators(0)  # Turn OFF Relay & LED
             print("[EVENT] 🟢 Motion Cleared. Relay & Red LED turned OFF")
             if client:
                 try:
@@ -131,9 +138,9 @@ while True:
             
             # Heartbeat blink: brief 100ms pulse if motion is not currently latching LED
             if current_motion == 0:
-                actuator.value(1)
+                set_actuators(1)
                 time.sleep_ms(80)
-                actuator.value(0)
+                set_actuators(0)
             
             # Publish when connected to MQTT
             if client:
