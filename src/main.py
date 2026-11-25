@@ -1,11 +1,11 @@
 """
-CognusOps AI Track Internship — Week 1 Tuesday Lab
-ESP32 Multi-Sensor Station: DHT22 Telemetry + Motion-Triggered Relay/LED
+CognusOps AI Track Internship — Week 1 Lab
+ESP32 Smart Station: DHT22 Telemetry + Motion-Triggered Relay/LED Actuation
 
-Outputs:
-1. Boot-time Power-On Self-Test (POST): Red LED & Relay blink 3 times on startup.
-2. DHT22 5-second periodic temperature & humidity JSON telemetry over Serial & MQTT (with heartbeat pulse).
-3. PIR Motion Sensor trigger: Alert blink + Relay & Red LED latch ON with real-time Serial events.
+MQTT Topic Hierarchy:
+- Light / Relay State: plant/lokeshkannan/room-1/light/state ("ON" / "OFF")
+- Motion Events:       wokwi-motion
+- Environmental Data:  plant/lokeshkannan/room-1/env & wokwi-weather
 """
 
 import network
@@ -22,11 +22,15 @@ ACTUATOR_PIN = 12    # Relay module input & Red LED Anode pin (GPIO 12)
 ONBOARD_LED  = 2     # Built-in ESP32 LED (GPIO 2) for guaranteed visual feedback
 
 # MQTT Parameters
-MQTT_CLIENT_ID    = "esp32-weather-motion-demo"
-MQTT_BROKER       = "host.wokwi.internal"  # Wokwi IoT Gateway bridge to local Mosquitto
-MQTT_PORT         = 1883
-MQTT_TOPIC        = "wokwi-weather"
-MQTT_MOTION_TOPIC = "wokwi-motion"
+MQTT_CLIENT_ID          = "esp32-lokeshkannan-station"
+MQTT_BROKER             = "host.wokwi.internal"  # Bridge to local Mosquitto / Docker broker
+MQTT_PORT               = 1883
+
+# Topic Definitions (Supporting standard lab topics & CognusOps hierarchy)
+MQTT_LIGHT_STATE_TOPIC  = "plant/lokeshkannan/room-1/light/state"
+MQTT_ENV_TOPIC          = "plant/lokeshkannan/room-1/env"
+MQTT_LEGACY_WEATHER     = "wokwi-weather"
+MQTT_LEGACY_MOTION      = "wokwi-motion"
 
 # Initialize Hardware Peripherals
 sensor      = dht.DHT22(Pin(DHT_PIN))
@@ -41,7 +45,7 @@ def set_actuators(state):
 
 print("==================================================")
 print("  ESP32 Smart Environmental & Motion Station     ")
-print("  Week 1 Tuesday Lab — CognusOps AI Track        ")
+print("  CognusOps AI Track — Intern: Lokeshkannan U    ")
 print("==================================================")
 
 # Power-On Self-Test (POST): Visibly blink Red LED & toggle Relay 3 times
@@ -76,6 +80,7 @@ try:
     client = MQTTClient(MQTT_CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
     client.connect()
     print("Connected!")
+    print("  ↳ Subscribed / Publishing to: '{}'".format(MQTT_LIGHT_STATE_TOPIC))
 except Exception as e:
     print("Broker not reachable ({}), running in standalone Serial mode.".format(e))
     client = None
@@ -102,19 +107,28 @@ while True:
                 time.sleep_ms(100)
             set_actuators(1)  # Latch ON Relay & LED while motion is active
             print("[EVENT] 💡 Relay & Red LED latched ON (Motion Active)")
+            
             if client:
                 try:
-                    client.publish(MQTT_MOTION_TOPIC, ujson.dumps({"event": "motion_detected", "relay": 1}))
-                except Exception:
-                    pass
+                    # Publish both plain state ("ON") and structured telemetry
+                    client.publish(MQTT_LIGHT_STATE_TOPIC, "ON")
+                    client.publish(MQTT_LEGACY_MOTION, ujson.dumps({"event": "motion_detected", "relay": 1, "state": "ON"}))
+                    print("  ↳ Published 'ON' to '{}'".format(MQTT_LIGHT_STATE_TOPIC))
+                except Exception as e:
+                    print("  ↳ MQTT publish failed: {}".format(e))
         else:
             set_actuators(0)  # Turn OFF Relay & LED
             print("[EVENT] 🟢 Motion Cleared. Relay & Red LED turned OFF")
+            
             if client:
                 try:
-                    client.publish(MQTT_MOTION_TOPIC, ujson.dumps({"event": "motion_cleared", "relay": 0}))
-                except Exception:
-                    pass
+                    # Publish both plain state ("OFF") and structured telemetry
+                    client.publish(MQTT_LIGHT_STATE_TOPIC, "OFF")
+                    client.publish(MQTT_LEGACY_MOTION, ujson.dumps({"event": "motion_cleared", "relay": 0, "state": "OFF"}))
+                    print("  ↳ Published 'OFF' to '{}'".format(MQTT_LIGHT_STATE_TOPIC))
+                except Exception as e:
+                    print("  ↳ MQTT publish failed: {}".format(e))
+                    
         prev_motion_state = current_motion
 
     # -------------------------------------------------------------
@@ -142,11 +156,12 @@ while True:
                 time.sleep_ms(80)
                 set_actuators(0)
             
-            # Publish when connected to MQTT
+            # Publish to both plant/lokeshkannan/room-1/env and wokwi-weather
             if client:
                 try:
-                    client.publish(MQTT_TOPIC, weather_payload)
-                    print("  ↳ Published to MQTT topic '{}'".format(MQTT_TOPIC))
+                    client.publish(MQTT_ENV_TOPIC, weather_payload)
+                    client.publish(MQTT_LEGACY_WEATHER, weather_payload)
+                    print("  ↳ Published to '{}'".format(MQTT_ENV_TOPIC))
                 except Exception as e:
                     print("  ↳ MQTT publish failed: {}".format(e))
         except OSError as e:
