@@ -35,12 +35,13 @@ MQTT_LEGACY_MOTION      = "wokwi-motion"
 # Initialize Hardware Peripherals
 sensor      = dht.DHT22(Pin(DHT_PIN))
 pir         = Pin(PIR_PIN, Pin.IN)
-actuator    = Pin(ACTUATOR_PIN, Pin.OUT)
+relay       = Pin(12, Pin.OUT)       # Mentor specification: relay on GPIO 12
+actuator    = relay                  # Alias for compatibility
 onboard_led = Pin(ONBOARD_LED, Pin.OUT)
 
 def set_actuators(state):
     """Controls external Relay & Red LED (GPIO 12) plus onboard LED (GPIO 2) simultaneously."""
-    actuator.value(state)
+    relay.value(state)
     onboard_led.value(state)
 
 print("==================================================")
